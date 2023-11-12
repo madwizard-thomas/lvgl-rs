@@ -35,18 +35,19 @@ fn main() {
         println!("cargo:rerun-if-changed={}", p.to_str().unwrap())
     }
 
+    #[cfg(feature = "library")]
     compile_library(CompileConf {
         lv_config_dir : lv_config_dir.as_path(),
         vendor: vendor.as_path(),
         shims_dir: &shims_dir,
-        font_extra_src: font_extra_src.map(PathBuf::as_path)
+        font_extra_src: font_extra_src.as_ref().map(PathBuf::as_path)
     });
 
     generate_bindings(BindingConf {
         lv_config_dir : lv_config_dir.as_path(),
         vendor: vendor.as_path(),
         shims_dir: &shims_dir,
-        font_extra_src: font_extra_src.map(PathBuf::as_path)
+        font_extra_src: font_extra_src.as_ref().map(PathBuf::as_path)
 
     });
 }
@@ -80,8 +81,10 @@ struct CompileConf<'a> {
     font_extra_src: Option<&'a Path>
 }
 
+#[cfg(feature = "library")]
 fn compile_library(conf: CompileConf)
 {
+
     let vendor = conf.vendor;
 
     let lvgl_src = vendor.join("lvgl").join("src");
@@ -141,6 +144,7 @@ fn compile_library(conf: CompileConf)
         //println!("cargo:rustc-link-search=")
     });
 }
+
 fn generate_bindings(conf: BindingConf)
 {
     let mut cc_args = vec![
@@ -153,13 +157,16 @@ fn generate_bindings(conf: BindingConf)
     ];
 
     // Set correct target triple for bindgen when cross-compiling
-    let target = env::var("TARGET").expect("Cargo build scripts always have TARGET");
+    let target = 
+        env::var("CROSS_COMPILE").unwrap_or_else(|_|
+        env::var("TARGET").expect("Cargo build scripts always have TARGET")
+        );
     let host = env::var("HOST").expect("Cargo build scripts always have HOST");
     if target != host {
         cc_args.push("-target");
         cc_args.push(target.as_str());
     }
-
+eprintln!("-- TARGET {target} HOST {host} ");
     let mut additional_args = Vec::new();
     if target.ends_with("emscripten") {
         match env::var("EMSDK") {
@@ -207,6 +214,7 @@ fn generate_bindings(conf: BindingConf)
     let bindings = bindings
         .header(conf.shims_dir.join("lvgl_drv.h").to_str().unwrap())
         .parse_callbacks(Box::new(ignored_macros));
+    cc_args.push("-v");
     //#[cfg(feature = "rust_timer")]
     //let bindings = bindings.header(shims_dir.join("rs_timer.h").to_str().unwrap());
     let bindings = bindings
@@ -310,6 +318,7 @@ fn add_font_headers(
     }
 }
 
+#[cfg(feature = "library")]
 fn add_c_files(build: &mut cc::Build, path: impl AsRef<Path>) {
     for e in path.as_ref().read_dir().unwrap() {
         let e = e.unwrap();
